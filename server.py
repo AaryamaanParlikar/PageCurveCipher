@@ -1,121 +1,109 @@
 import socket
-import hmac
+import random
 import hashlib
+import hmac
 import time
 
-K = 13
-KEY_BYTES = str(K).encode()
-MOD = 2**32
+p = 2147483647
+g = 5
 
-NONCE_LIFETIME = 30  # seconds
-seen_nonces = {}  # nonce → timestamp
+NONCE_LIFETIME = 30
+seen_nonces = {}
 
+def recvline(conn):
+    data = b""
+    while not data.endswith(b"\n"):
+        part = conn.recv(1)
+        if not part:
+            break
+        data += part
+    return data.decode().strip()
 
-def init_state():
-    return (K * 7) % MOD
+def derive_key(shared):
+    return hashlib.sha256(str(shared).encode()).digest()
 
+def make_mac(key, data):
+    return hmac.new(key, data.encode(), hashlib.sha256).hexdigest()
 
-def make_mac(data):
-    return hmac.new(KEY_BYTES, data.encode(), hashlib.sha256).hexdigest()
+def verify_mac(key, data, mac):
+    return hmac.compare_digest(make_mac(key, data), mac)
 
-
-def verify_mac(data, mac):
-    expected = make_mac(data)
-    return hmac.compare_digest(expected, mac)
-
-
-def clean_old_nonces():
+def clean():
     now = time.time()
-    expired = [n for n, t in seen_nonces.items() if now - t > NONCE_LIFETIME]
+    expired = [n for n,t in seen_nonces.items() if now-t > NONCE_LIFETIME]
     for n in expired:
         del seen_nonces[n]
 
-
-def encrypt_stream(nums, state):
-    out = []
-    for p in nums:
-        c = (p + state) % MOD
-        state = (state + c + K) % MOD
-        out.append(c)
-    return out, state
-
-
-def decrypt_stream(nums, state):
-    out = []
-    for c in nums:
-        p = (c - state) % MOD
-        state = (state + c + K) % MOD
-        out.append(p)
-    return out, state
-
-
-def letters_to_nums(text):
-    return [ord(c) - 64 for c in text]
-
-
-def nums_to_letters(nums):
-    return "".join(chr(n + 64) for n in nums)
-
-
 server = socket.socket()
-server.bind(("0.0.0.0", 5000))
+server.bind(("0.0.0.0",5000))
 server.listen(5)
 
 print("Server running...")
 
 while True:
-    conn, addr = server.accept()
-    print("\nConnected:", addr)
+    conn,addr = server.accept()
+    print("Connected:",addr)
 
-    clean_old_nonces()  # remove expired entries
-    state = init_state()
+    # ---- Diffie Hellman ----
+    b = random.randint(2,100000)
+    B = pow(g,b,p)
 
-    try:
-        packet = conn.recv(4096).decode()
-        print("RAW:", packet)
+    conn.sendall(f"{p},{g},{B}\n".encode())
 
-        parts = packet.split("||")
-        if len(parts) != 2:
-            print("Invalid format")
-            conn.close()
-            continue
+    A = int(recvline(conn))
 
-        data, mac = parts
+    shared = pow(A,b,p)
+    key = derive_key(shared)
 
-        if not verify_mac(data, mac):
-            print("MESSAGE TAMPERED")
-            conn.close()
-            continue
+    # ---- receive packet ----
+    clean()
+    packet = recvline(conn)
 
-        nonce, cipher_text = data.split("|")
+    parts = packet.split("||")
+    if len(parts)!=2:
+        conn.close()
+        continue
 
-        now = time.time()
-        if nonce in seen_nonces:
-            print("REPLAY DETECTED")
-            conn.close()
-            continue
+    data,mac = parts
 
-        seen_nonces[nonce] = now
+    if not verify_mac(key,data,mac):
+        print("Tampered message")
+        conn.close()
+        continue
 
-        cipher_nums = [int(x) for x in cipher_text.split(",") if x]
+    nonce,cipher = data.split("|")
 
-        plain_nums, state = decrypt_stream(cipher_nums, state)
-        message = nums_to_letters(plain_nums)
+    if nonce in seen_nonces:
+        print("Replay detected")
+        conn.close()
+        continue
 
-        print("Message:", message)
+    seen_nonces[nonce]=time.time()
 
-        reply = "OK"
-        nums = letters_to_nums(reply)
+    nums=[int(x) for x in cipher.split(",") if x]
+    state = shared % (2**32)
 
-        enc, state = encrypt_stream(nums, state)
-        cipher = ",".join(map(str, enc))
+    msg=""
+    for c in nums:
+        pnum=(c-state)%(2**32)
+        state=(state+c)%(2**32)
+        msg+=chr(pnum+64)
 
-        payload = nonce + "|" + cipher
-        mac_reply = make_mac(payload)
+    print("Message:",msg)
 
-        conn.sendall((payload + "||" + mac_reply).encode())
+    # ---- reply ----
+    reply="OK"
+    nums=[ord(c)-64 for c in reply]
 
-    except Exception as e:
-        print("Error:", e)
+    out=[]
+    for n in nums:
+        c=(n+state)%(2**32)
+        state=(state+c)%(2**32)
+        out.append(str(c))
 
+    cipher=",".join(out)
+    payload=nonce+"|"+cipher
+    mac=make_mac(key,payload)
+
+    conn.sendall((payload+"||"+mac+"\n").encode())
     conn.close()

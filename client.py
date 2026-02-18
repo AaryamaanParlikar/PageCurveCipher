@@ -1,102 +1,84 @@
 import socket
-import hmac
+import random
 import hashlib
+import hmac
 import secrets
 
-K = 13
-KEY_BYTES = str(K).encode()
-MOD = 2**32
+def recvline(sock):
+    data = b""
+    while not data.endswith(b"\n"):
+        part = sock.recv(1)
+        if not part:
+            break
+        data += part
+    return data.decode().strip()
 
+def derive_key(shared):
+    return hashlib.sha256(str(shared).encode()).digest()
 
-def init_state():
-    return (K * 7) % MOD
+def make_mac(key,data):
+    return hmac.new(key,data.encode(),hashlib.sha256).hexdigest()
 
+def verify_mac(key,data,mac):
+    return hmac.compare_digest(make_mac(key,data),mac)
 
-def make_mac(data):
-    return hmac.new(KEY_BYTES, data.encode(), hashlib.sha256).hexdigest()
+client=socket.socket()
+client.connect(("127.0.0.1",5000))
 
+# ---- receive DH params ----
+p,g,B = map(int, recvline(client).split(","))
 
-def verify_mac(data, mac):
-    expected = make_mac(data)
-    return hmac.compare_digest(expected, mac)
+a=random.randint(2,100000)
+A=pow(g,a,p)
 
+client.sendall((str(A)+"\n").encode())
 
-def encrypt_stream(nums, state):
-    out = []
-    for p in nums:
-        c = (p + state) % MOD
-        state = (state + c + K) % MOD
-        out.append(c)
-    return out, state
+shared=pow(B,a,p)
+key=derive_key(shared)
 
+state = shared%(2**32)
 
-def decrypt_stream(nums, state):
-    out = []
-    for c in nums:
-        p = (c - state) % MOD
-        state = (state + c + K) % MOD
-        out.append(p)
-    return out, state
+msg=input("Message: ").upper()
 
+nums=[ord(c)-64 for c in msg]
 
-def letters_to_nums(text):
-    return [ord(c) - 64 for c in text]
+out=[]
+for n in nums:
+    c=(n+state)%(2**32)
+    state=(state+c)%(2**32)
+    out.append(str(c))
 
+cipher=",".join(out)
+nonce=str(secrets.randbits(32))
+payload=nonce+"|"+cipher
+mac=make_mac(key,payload)
 
-def nums_to_letters(nums):
-    return "".join(chr(n + 64) for n in nums)
+client.sendall((payload+"||"+mac+"\n").encode())
 
+# ---- receive reply ----
+reply=recvline(client)
 
-client = socket.socket()
-client.connect(("127.0.0.1", 5000))
-
-state = init_state()
-
-mode = input("Send new (n) or Simulate attack (r)? ").lower()
-
-if mode == "r":
-    packet = input("Paste packet: ")
-
-else:
-    msg = input("Enter message: ").upper()
-
-    nums = letters_to_nums(msg)
-    cipher, state = encrypt_stream(nums, state)
-    cipher_str = ",".join(map(str, cipher))
-
-    nonce = str(secrets.randbits(32))
-
-    payload = nonce + "|" + cipher_str
-    mac = make_mac(payload)
-
-    packet = payload + "||" + mac
-
-    print("\nSending packet:")
-    print(packet)
-
-client.sendall(packet.encode())
-
-reply = client.recv(4096).decode()
-print("\nRAW REPLY:", reply)
-
-parts = reply.split("||")
-if len(parts) != 2:
-    print("No reply or rejected by server")
+parts=reply.split("||")
+if len(parts)!=2:
+    print("Invalid reply")
     exit()
 
-data, mac = parts
+data,mac=parts
 
-if not verify_mac(data, mac):
-    print("SERVER MESSAGE TAMPERED")
+if not verify_mac(key,data,mac):
+    print("Tampered reply")
     exit()
 
-nonce_recv, cipher_text = data.split("|")
+nonce,cipher=data.split("|")
 
-cipher_nums = [int(x) for x in cipher_text.split(",") if x]
+nums=[int(x) for x in cipher.split(",") if x]
 
-plain_reply, state = decrypt_stream(cipher_nums, state)
+msg=""
+for c in nums:
+    pnum=(c-state)%(2**32)
+    state=(state+c)%(2**32)
+    msg+=chr(pnum+64)
 
-print("\nServer replied:", nums_to_letters(plain_reply))
-print("Reply nonce:", nonce_recv)
+print("Server:",msg)
 
 client.close()
