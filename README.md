@@ -1,255 +1,128 @@
-# PageCurveCipher
+PageCurveCipher — Secure Protocol Implementation
 
-**PageCurveCipher** is a custom secure communication protocol built in Python that demonstrates the internal structure of real-world cryptographic systems. It was designed as a hands-on exploration of how secure protocols actually work beneath the surface, combining encryption, authentication, integrity verification, and replay protection into a single experimental framework.
+PageCurveCipher is a custom-built secure communication protocol implemented in Python that demonstrates how real-world encrypted systems are structured internally. It was developed as a practical exploration of cryptographic protocol engineering rather than just encryption algorithms.
 
----
+Concept Inspiration
 
-## Inspiration
+This project is inspired by the theoretical physics concept that information entering a black hole appears scrambled and random until sufficient data is gathered to reconstruct it. Similarly, this protocol ensures that intercepted packets appear meaningless unless the correct session state and keys are known.
 
-This project is conceptually inspired by the theoretical physics idea that information thrown into a **black hole** appears scrambled and random until enough radiation is collected to reconstruct it. That thought experiment inspired the design goal:
+Implemented Security Layers
 
-> Build a system where intercepted data looks meaningless unless the correct key, state, and verification logic are known.
+This system incrementally implements multiple real protocol defenses:
 
----
+Stream-style encryption
 
-## Features
+Message authentication (HMAC)
 
-* Custom stream cipher encryption
-* HMAC-based message authentication
-* Integrity verification
-* Nonce-based replay protection
-* Time-window nonce expiration
-* Secure packet structure validation
-* Persistent socket server
-* Attack simulation testing modes
+Replay attack protection
 
----
+Nonce freshness validation
 
-## Security Properties Demonstrated
+Timestamp expiration window
 
-This system models the same core guarantees used in real secure protocols:
+Secure packet framing
 
-| Property          | Implementation           |
-| ----------------- | ------------------------ |
-| Confidentiality   | Stream cipher encryption |
-| Integrity         | HMAC verification        |
-| Authentication    | Shared secret key        |
-| Replay Protection | Nonce tracking           |
-| Freshness         | Expiring nonce window    |
+Diffie–Hellman key exchange
 
----
+Dynamic session keys
 
-## Packet Format
+Protocol Packet Structure
 
-```
+Each transmitted message follows:
+
 nonce | ciphertext || MAC
-```
 
-**Components**
+Where:
 
-* **nonce** → prevents replay attacks
-* **ciphertext** → encrypted message
-* **MAC** → verifies authenticity and integrity
+nonce → prevents replay attacks
+ciphertext → encrypted message
+MAC → verifies integrity and authenticity
 
----
+Handshake Process
 
-## Protocol Architecture
+Before any message is sent, client and server perform a Diffie–Hellman key exchange to generate a shared session key that is never transmitted directly.
 
-```
-Client                                   Server
-  |                                        |
-  |--- nonce | ciphertext || MAC --------->|
-  |                                        |
-  |        verify MAC + nonce              |
-  |        check replay window             |
-  |        decrypt message                 |
-  |                                        |
-  |<-- nonce | ciphertext || MAC ----------|
-  |                                        |
-  |        verify + decrypt reply          |
-```
+This ensures:
 
----
+unique key per connection
 
-## Data Flow
+resistance to recorded traffic attacks
 
-**Encryption**
+protection if long-term keys leak
 
-```
-Plaintext → numeric encoding → stream cipher → ciphertext
-```
+Security Guarantees Demonstrated
 
-**Authentication**
+Confidentiality — messages are encrypted
+Integrity — modifications are detected
+Authentication — sender must know session key
+Freshness — old packets rejected
+Replay Resistance — duplicate packets blocked
 
-```
-nonce + ciphertext → HMAC → MAC
-```
+System Architecture Overview
 
-**Verification**
+Client
+→ encrypt + MAC + nonce
+→ send packet
+→ server verifies → decrypts → processes
+→ server encrypts reply → client verifies
 
-```
-recompute MAC → compare → accept or reject
-```
+Each step is validated before proceeding. Invalid packets are silently rejected.
 
----
+Educational Value
 
-## How It Works
+This project demonstrates how secure communication protocols are engineered in practice:
 
-1. Client encrypts message using evolving internal state.
-2. Client generates a random nonce.
-3. Client computes MAC over nonce + ciphertext.
-4. Packet is transmitted.
-5. Server verifies integrity and freshness.
-6. If valid → decrypts and replies.
-7. If invalid → silently rejects.
+layered security design
 
----
+adversarial testing
 
-## Running the Project
+defensive validation
+
+session key negotiation
+
+protocol state synchronization
+
+It is intentionally written from scratch to illustrate concepts normally hidden inside cryptographic libraries.
+
+Running the Project
 
 Start server:
 
-```
 python server.py
-```
+
 
 Run client:
 
-```
 python client.py
-```
 
-Client modes:
+Why This Project Matters
 
-```
-n → send new encrypted message
-r → replay captured packet (testing mode)
-```
+Most beginner cryptography projects stop at encryption and decryption. PageCurveCipher goes further by modeling the structural logic used in real protocols such as TLS and SSH, making it a practical learning framework for understanding secure system design.
 
----
+Status
 
-## Attack Simulation Modes
+Current version includes full secure session protocol with key exchange, authentication, replay defense, and message validation.
 
-This project intentionally allows testing of adversarial scenarios.
+Future Improvements
 
-### Replay Attack
+Planned enhancements to further strengthen the protocol include:
 
-Send previously captured packet.
+Digital signature–based server authentication
 
-Expected result:
+Perfect forward secrecy key rotation
 
-```
-Server rejects connection
-```
+Multi-client concurrent handling
 
----
+Packet sequence numbering
 
-### Tampering Attack
+Structured packet headers instead of delimiter parsing
 
-Modify any digit in packet.
+Optional certificate verification layer
 
-Expected result:
+Attack logging and anomaly detection
 
-```
-Integrity check fails
-```
+These additions would bring the protocol even closer to the architecture of real-world secure communication systems.
 
----
+Disclaimer
 
-### Invalid Packet
-
-Break packet format.
-
-Expected result:
-
-```
-Immediate rejection
-```
-
----
-
-## Security Design Philosophy
-
-The protocol uses layered defenses:
-
-```
-Encryption protects secrecy
-MAC protects integrity
-Nonce protects freshness
-Validation protects parsing
-```
-
-No single mechanism is trusted alone. Security emerges from combining them.
-
----
-
-## Why This Project Stands Out
-
-Most beginner encryption projects only show:
-
-```
-encrypt → decrypt
-```
-
-PageCurveCipher demonstrates real protocol engineering concepts:
-
-* adversarial testing
-* replay attack defense
-* secure parsing
-* state synchronization
-* layered security design
-
-This mirrors how actual secure communication systems are built.
-
----
-
-## Learning Outcomes
-
-Working with this project helps you understand:
-
-* how secure protocols operate internally
-* why encryption alone is insufficient
-* how replay attacks function
-* why authentication must cover all fields
-* how defensive validation prevents exploits
-
----
-
-## Recommended Experiments
-
-Try modifying parameters to observe security effects:
-
-* change nonce lifetime
-* disable MAC verification
-* reuse nonce intentionally
-* alter ciphertext
-* modify key value
-
-Each reveals a different security principle.
-
----
-
-## Future Improvements
-
-Possible extensions:
-
-* multi-client support
-* session key negotiation
-* challenge–response authentication
-* Diffie–Hellman key exchange
-* nonlinear cipher transformations
-
----
-
-## Author
-
-Developed by **Aaryamaan Parlikar** as a practical exploration of secure protocol engineering.
-
----
-
-## Disclaimer
-
-This project is for educational and research purposes only.
-It is **not production-grade cryptography** and should not be used for real-world security.
-
-Its purpose is to demonstrate how secure communication systems are designed, attacked, and defended.
+This project is for educational and research purposes only and is not intended for production security use.
