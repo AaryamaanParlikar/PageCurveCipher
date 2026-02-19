@@ -56,7 +56,7 @@ def load_authorized_keys():
             keys.append(serialization.load_pem_public_key(f.read()))
     return keys
 
-# ---------- START SERVER ----------
+# ---------- SERVER ----------
 server = socket.socket()
 server.bind(("0.0.0.0",5000))
 server.listen(5)
@@ -67,9 +67,9 @@ while True:
     conn, addr = server.accept()
     print("Connected:", addr)
 
-    # ----- SIGNED DIFFIE HELLMAN -----
+    # ----- SIGNED DH -----
     b = random.randint(2,100000)
-    B = pow(g, b, p)
+    B = pow(g,b,p)
 
     handshake_data = f"{p},{g},{B}"
 
@@ -86,14 +86,15 @@ while True:
 
     A = int(recvline(conn))
 
-    shared = pow(A, b, p)
+    shared = pow(A,b,p)
     key = derive_key(shared)
+    state = shared % (2**32)
 
-    # ----- CLIENT AUTHENTICATION -----
+    # ----- CLIENT AUTH -----
     authorized_keys = load_authorized_keys()
 
     challenge = str(random.randint(100000,999999))
-    conn.sendall((challenge + "\n").encode())
+    conn.sendall((challenge+"\n").encode())
 
     signature = bytes.fromhex(recvline(conn))
 
@@ -121,6 +122,8 @@ while True:
 
     print("Client authenticated")
 
+    expected_seq = 1
+
     # ----- RECEIVE PACKET -----
     clean()
     packet = recvline(conn)
@@ -137,7 +140,23 @@ while True:
         conn.close()
         continue
 
-    nonce, cipher = data.split("|")
+    # ----- SEQUENCE CHECK -----
+    seq_part, rest = data.split(":",1)
+    seq = int(seq_part)
+
+    if seq != expected_seq:
+        print("Out-of-order packet detected")
+        conn.close()
+        continue
+
+    expected_seq += 1
+
+    # ----- KEY ROTATION (SYNCED) -----
+    if seq % 3 == 0:
+        key = hashlib.sha256(key).digest()
+        print("Key rotated")
+
+    nonce, cipher = rest.split("|")
 
     if nonce in seen_nonces:
         print("Replay detected")
@@ -147,7 +166,6 @@ while True:
     seen_nonces[nonce] = time.time()
 
     nums = [int(x) for x in cipher.split(",") if x]
-    state = shared % (2**32)
 
     message = ""
     for c in nums:
@@ -168,8 +186,8 @@ while True:
         out.append(str(c))
 
     cipher = ",".join(out)
-    payload = nonce + "|" + cipher
-    mac = make_mac(key, payload)
+    payload = str(expected_seq) + ":" + nonce + "|" + cipher
+    mac = make_mac(key,payload)
 
-    conn.sendall((payload + "||" + mac + "\n").encode())
+    conn.sendall((payload+"||"+mac+"\n").encode())
     conn.close()

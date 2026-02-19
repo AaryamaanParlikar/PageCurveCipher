@@ -38,35 +38,30 @@ def verify_mac(key,data,mac):
 client = socket.socket()
 client.connect(("127.0.0.1",5000))
 
-# ----- RECEIVE SIGNED DH -----
+# ----- SIGNED DH -----
 line = recvline(client)
 data, signature_hex = line.split("|")
 
 signature = bytes.fromhex(signature_hex)
 
-try:
-    server_pub.verify(
-        signature,
-        data.encode(),
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
-        ),
-        hashes.SHA256()
-    )
-except:
-    print("Server identity verification failed!")
-    exit()
+server_pub.verify(
+    signature,
+    data.encode(),
+    padding.PSS(
+        mgf=padding.MGF1(hashes.SHA256()),
+        salt_length=padding.PSS.MAX_LENGTH
+    ),
+    hashes.SHA256()
+)
 
-p, g, B = map(int, data.split(","))
+p,g,B = map(int,data.split(","))
 
-# ----- SEND DH VALUE -----
+# ----- SEND DH -----
 a = random.randint(2,100000)
-A = pow(g, a, p)
+A = pow(g,a,p)
 client.sendall((str(A)+"\n").encode())
 
-# ----- SHARED KEY -----
-shared = pow(B, a, p)
+shared = pow(B,a,p)
 key = derive_key(shared)
 state = shared % (2**32)
 
@@ -85,8 +80,9 @@ signature = client_priv.sign(
 client.sendall((signature.hex()+"\n").encode())
 
 # ----- SEND MESSAGE -----
-msg = input("Message: ").upper()
+seq = 1
 
+msg = input("Message: ").upper()
 nums = [ord(c)-64 for c in msg]
 
 out = []
@@ -97,21 +93,29 @@ for n in nums:
 
 cipher = ",".join(out)
 nonce = str(secrets.randbits(32))
-payload = nonce + "|" + cipher
-mac = make_mac(key, payload)
+payload = str(seq) + ":" + nonce + "|" + cipher
+mac = make_mac(key,payload)
 
 client.sendall((payload+"||"+mac+"\n").encode())
 
+seq += 1
+
+# ----- KEY ROTATION (SYNCED) -----
+if (seq-1) % 3 == 0:
+    key = hashlib.sha256(key).digest()
+    print("Key rotated")
+
 # ----- RECEIVE REPLY -----
 reply = recvline(client)
-
 data, mac = reply.split("||")
 
 if not verify_mac(key,data,mac):
     print("Tampered reply")
     exit()
 
-nonce, cipher = data.split("|")
+seq_part, rest = data.split(":",1)
+nonce, cipher = rest.split("|")
+
 nums = [int(x) for x in cipher.split(",") if x]
 
 msg = ""
