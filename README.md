@@ -1,116 +1,158 @@
 # PageCurveCipher — Secure Protocol Implementation
 
-PageCurveCipher is a custom-built secure communication protocol implemented in Python.  
-It demonstrates how real-world secure transport systems are structured internally by layering encryption, authentication, replay protection, key exchange, and identity verification.
+PageCurveCipher is a custom-built secure communication protocol written in Python that demonstrates how real-world encrypted transport systems are architected internally. It incrementally layers cryptographic protections to form a fully authenticated, stateful, forward-secure communication channel.
+
+This project is designed for educational and research purposes to expose the structural logic behind secure protocols such as TLS, SSH, and modern encrypted messaging systems.
 
 ---
 
-## Inspiration
+## Concept Inspiration
 
-This project is conceptually inspired by the theoretical physics concept known as the **Page Curve**, which describes how information entering a black hole appears scrambled and random but is ultimately preserved.
+The name *PageCurveCipher* is inspired by the **Page Curve** in black hole physics, which describes how information entering a black hole appears random but is actually preserved within hidden correlations.
 
-Similarly, this protocol ensures that intercepted packets appear meaningless unless the correct session state, shared secret, and verification mechanisms are known.
+Similarly, this protocol ensures that intercepted packets appear statistically random unless the observer possesses the correct session state and cryptographic keys.
 
 ---
 
-## Implemented Security Layers
+## Protocol Architecture
 
-This system incrementally builds a complete secure communication stack:
+The protocol is constructed as layered defenses:
 
-- Stream-style state-based encryption
-- HMAC-based message authentication
-- Nonce-based replay protection
-- Timestamp expiration window
-- Secure TCP framing
+
+Identity Verification
+↓
+Key Exchange
+↓
+Session Encryption
+↓
+Integrity Verification
+↓
+Replay Protection
+↓
+Ordering Enforcement
+↓
+Key Rotation
+
+
+Each layer protects against a distinct class of attacks.
+
+---
+
+## Implemented Security Features
+
+### Cryptographic Core
 - Diffie–Hellman key exchange
-- Dynamic per-session keys
-- RSA digital signature server authentication
+- Dynamic session key generation
+- SHA-256 key derivation
+
+### Authentication
+- RSA-signed server handshake
+- Client public-key authentication
+- Challenge–response identity verification
+
+### Message Protection
+- Stateful stream encryption
+- HMAC-based message authentication
+- Nonce replay prevention
+- Strict sequence number enforcement
+
+### Session Security
+- Forward secrecy through ephemeral keys
+- Automatic key rotation
+- Stateful protocol validation
 
 ---
 
-## Full Handshake Flow
+## Packet Format
 
-1. Client connects to server  
-2. Server sends Diffie–Hellman parameters (p, g, B)  
-3. Server signs handshake values using RSA private key  
-4. Client verifies signature using server public key  
-5. Client sends its Diffie–Hellman value (A)  
-6. Both derive shared session key  
-7. Secure communication begins  
+
+sequence:nonce|ciphertext||MAC
+
+
+| Field | Purpose |
+|------|--------|
+sequence | prevents packet reordering or duplication |
+nonce | prevents replay attacks |
+ciphertext | encrypted message |
+MAC | integrity and authenticity verification |
 
 ---
 
-## Packet Structure
-
-All messages follow this structure:
-
-nonce | ciphertext || MAC
+## Handshake Protocol
 
 
-Where:
+Client connects
+↓
+Server sends DH parameters + signature
+↓
+Client verifies server identity
+↓
+Client sends DH value
+↓
+Shared session key derived
+↓
+Server sends challenge
+↓
+Client signs challenge
+↓
+Server verifies client identity
+↓
+Secure session established
 
-- **nonce** → prevents replay attacks  
-- **ciphertext** → encrypted message  
-- **MAC** → verifies integrity and authenticity  
+
+---
+
+## Key Rotation Mechanism
+
+The protocol automatically rotates encryption keys every three packets using a deterministic hash chain:
+
+
+new_key = SHA256(previous_key)
+
+
+Both client and server independently compute the new key based on synchronized sequence numbers, eliminating the need for additional key exchange messages.
+
+### Security Benefits
+
+- Limits damage if a session key is compromised
+- Reduces cryptanalysis window
+- Prevents long-term traffic decryption
+- Strengthens forward secrecy properties
+
+This mechanism is conceptually similar to key update systems used in TLS 1.3 and modern secure messaging protocols.
 
 ---
 
 ## Security Guarantees
 
 | Property | Protection Mechanism |
-|----------|----------------------|
-Confidentiality | Stream cipher encryption |
-Integrity | HMAC authentication |
-Authentication | Shared session key |
-Freshness | Nonce validation |
-Replay Resistance | Nonce tracking |
-Forward Secrecy | Diffie–Hellman session keys |
-Server Identity | RSA digital signature |
+|--------|----------------------|
+Confidentiality | Encryption |
+Integrity | HMAC |
+Authentication | Digital signatures |
+Replay resistance | Nonce tracking |
+Ordering enforcement | Sequence numbers |
+Forward secrecy | Diffie–Hellman |
+Key compromise resistance | Rotation |
+MITM resistance | Signed handshake |
 
 ---
 
 ## Cipher Workflow
 
-Encryption process:
-
-Plaintext
-→ Numeric Conversion
-→ State-Based Transformation
-→ Ciphertext
+Encryption:
 
 
-Decryption process:
-
-Ciphertext
-→ Reverse State Calculation
-→ Numeric Recovery
-→ Plaintext
+Plaintext → Numeric Encoding → Stateful Transformation → Ciphertext
 
 
-The internal state evolves after each character, ensuring positional uniqueness in encryption.
-
----
-
-## System Architecture Overview
-
-Client
-↓
-DH Handshake + Signature Verification
-↓
-Session Key Derivation
-↓
-Encrypt + MAC + Nonce
-↓
-Transmit Packet
-↓
-Server Validation Layers
-↓
-Decrypt Message
-↓
-Secure Reply
+Decryption:
 
 
-Each stage must pass validation before processing continues.
+Ciphertext → Reverse Transformation → Numeric Recovery → Plaintext
+
+
+The cipher state evolves after each symbol, ensuring positional unpredictability.
 
 ---
 
@@ -128,12 +170,18 @@ python client.py
 
 ---
 
-## Key Files
+## Project Structure
 
-- `server.py` — secure server implementation  
-- `client.py` — secure client implementation  
-- `server_private.pem` — server signing key (ignored by Git)  
-- `server_public.pem` — server verification key  
+
+server.py
+client.py
+server_private.pem
+server_public.pem
+client_private.pem
+authorized_clients/
+client_public.pem
+README.md
+
 
 ---
 
@@ -142,37 +190,45 @@ python client.py
 This project demonstrates:
 
 - secure protocol layering
-- adversarial defense design
-- replay attack mitigation
-- cryptographic key exchange
+- cryptographic state synchronization
+- adversarial resilience design
+- session key lifecycle management
+- identity verification architecture
+- secure packet construction
+
+It is intentionally written without relying on high-level cryptographic frameworks to reveal how secure systems function internally.
+
+---
+
+## Why This Project Is Unique
+
+Most beginner cryptography projects stop at encryption.
+
+PageCurveCipher implements a complete secure communication protocol including:
+
+- full handshake negotiation
 - identity verification
-- state synchronization in encrypted channels
+- stateful session management
+- replay protection
+- sequence enforcement
+- forward secrecy
+- key lifecycle control
 
-It models the structural logic used in real-world protocols such as TLS and SSH.
-
----
-
-## Future Improvements
-
-Planned enhancements include:
-
-- Client-side authentication
-- Certificate chain validation
-- Perfect forward secrecy key rotation
-- Packet sequence numbering
-- Structured binary packet headers
-- Attack logging and anomaly detection
-- Multi-client concurrency support
+This mirrors the architectural design principles of real secure transport protocols.
 
 ---
 
-## Why This Project Matters
+## Future Enhancements
 
-Most beginner cryptography projects stop at encryption and decryption.
+Planned upgrades include:
 
-PageCurveCipher goes further by modeling a complete secure session protocol with handshake authentication and layered defenses.
-
-It serves as a practical framework for understanding secure transport protocol design.
+- intrusion detection system
+- certificate authority trust chain
+- packet padding against traffic analysis
+- binary packet encoding
+- multi-client concurrency
+- secure logging framework
+- session renegotiation
 
 ---
 
@@ -185,4 +241,4 @@ Developed by **Aaryamaan Parlikar** as a practical exploration of secure protoco
 ## Disclaimer
 
 This project is intended for educational and research purposes only.  
-It is not designed for production security use.
+It is not designed for production security deployment.
