@@ -32,9 +32,15 @@ Replay Protection
 Ordering Enforcement
 ↓
 Key Rotation
+↓
+Intrusion Detection
+↓
+Rate Limiting
+↓
+Security Logging
 
 
-Each layer protects against a distinct class of attacks.
+Each layer protects against a different class of attacks.
 
 ---
 
@@ -58,8 +64,27 @@ Each layer protects against a distinct class of attacks.
 
 ### Session Security
 - Forward secrecy through ephemeral keys
-- Automatic key rotation
-- Stateful protocol validation
+- Automatic key rotation every three packets
+
+### Intrusion Detection
+- Detection of suspicious protocol violations
+- Strike-based attacker tracking
+- Automatic IP banning after repeated violations
+
+### Availability Protection
+- Connection rate limiting per IP
+- Prevents flooding or denial-of-service attempts
+- Limits number of connections allowed within a time window
+
+### Security Auditing
+- Security events written to `security.log`
+- Logs include:
+  - MAC failures
+  - Replay attempts
+  - Sequence violations
+  - Unauthorized authentication attempts
+  - Rate limit triggers
+- Enables forensic analysis of attacks
 
 ---
 
@@ -133,8 +158,11 @@ Authentication | Digital signatures |
 Replay resistance | Nonce tracking |
 Ordering enforcement | Sequence numbers |
 Forward secrecy | Diffie–Hellman |
-Key compromise resistance | Rotation |
+Key compromise resistance | Key rotation |
 MITM resistance | Signed handshake |
+Attack detection | Intrusion detection system |
+Availability protection | Rate limiting |
+Security monitoring | Security logging |
 
 ---
 
@@ -160,10 +188,12 @@ The cipher state evolves after each symbol, ensuring positional unpredictability
 
 Start server:
 
+
 python server.py
 
 
 Run client:
+
 
 python client.py
 
@@ -180,6 +210,7 @@ server_public.pem
 client_private.pem
 authorized_clients/
 client_public.pem
+security.log
 README.md
 
 
@@ -195,6 +226,8 @@ This project demonstrates:
 - session key lifecycle management
 - identity verification architecture
 - secure packet construction
+- intrusion detection concepts
+- denial-of-service mitigation techniques
 
 It is intentionally written without relying on high-level cryptographic frameworks to reveal how secure systems function internally.
 
@@ -213,6 +246,9 @@ PageCurveCipher implements a complete secure communication protocol including:
 - sequence enforcement
 - forward secrecy
 - key lifecycle control
+- intrusion detection
+- denial-of-service mitigation
+- security logging
 
 This mirrors the architectural design principles of real secure transport protocols.
 
@@ -222,13 +258,12 @@ This mirrors the architectural design principles of real secure transport protoc
 
 Planned upgrades include:
 
-- intrusion detection system
 - certificate authority trust chain
 - packet padding against traffic analysis
 - binary packet encoding
 - multi-client concurrency
-- secure logging framework
-- session renegotiation
+- adaptive anomaly detection
+- automated threat response
 
 ---
 
