@@ -3,27 +3,20 @@ import random
 import hashlib
 import hmac
 import secrets
+from colorama import Fore, Style, init
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+init()
 
-# -------- LOAD KEYS --------
-with open("server_public.pem", "rb") as f:
-    server_pub = serialization.load_pem_public_key(f.read())
-
-with open("client_private.pem", "rb") as f:
-    client_priv = serialization.load_pem_private_key(f.read(), password=None)
+PORT = 5000
 
 
-# -------- HELPERS --------
 def recvline(sock):
     data = b""
     while not data.endswith(b"\n"):
-        part = sock.recv(1)
-        if not part:
-            break
-        data += part
+        data += sock.recv(1)
     return data.decode().strip()
 
 
@@ -35,17 +28,16 @@ def make_mac(key, data):
     return hmac.new(key, data.encode(), hashlib.sha256).hexdigest()
 
 
-def verify_mac(key, data, mac):
-    return hmac.compare_digest(make_mac(key, data), mac)
+with open("server_public.pem", "rb") as f:
+    server_pub = serialization.load_pem_public_key(f.read())
 
-
-# -------- CONNECT --------
 client = socket.socket()
-client.connect(("127.0.0.1", 5000))
+client.connect(("127.0.0.1", PORT))
 
+print(Fore.CYAN + "\n════ CLIENT STARTED ════\n")
 
-# ----- SERVER SIGNED DH -----
 line = recvline(client)
+
 data, signature_hex = line.split("|")
 
 signature = bytes.fromhex(signature_hex)
@@ -62,80 +54,62 @@ server_pub.verify(
 
 p, g, B = map(int, data.split(","))
 
+print(Fore.GREEN + "✓ Server authenticated")
 
-# ----- CLIENT DH -----
 a = random.randint(2, 100000)
 A = pow(g, a, p)
+
 client.sendall((str(A) + "\n").encode())
 
 shared = pow(B, a, p)
+
 key = derive_key(shared)
 state = shared % (2**32)
 
+print(Fore.GREEN + "✓ Session key established")
 
-# ----- CLIENT AUTH -----
-challenge = recvline(client)
+msg = input(Fore.YELLOW + "\nEnter message: ").upper()
 
-signature = client_priv.sign(
-    challenge.encode(),
-    padding.PSS(
-        mgf=padding.MGF1(hashes.SHA256()),
-        salt_length=padding.PSS.MAX_LENGTH
-    ),
-    hashes.SHA256()
-)
+print(Fore.CYAN + "\n════════ CLIENT PIPELINE ════════")
 
-client.sendall((signature.hex() + "\n").encode())
-
-
-# ----- SEND MESSAGE -----
-seq = 1
-msg = input("Message: ").upper()
+print("Plaintext        :", msg)
 
 nums = [ord(c) - 64 for c in msg]
 
-out = []
+print("Numeric Encoding :", nums)
+
+cipher_nums = []
 
 for n in nums:
     c = (n + state) % (2**32)
     state = (state + c) % (2**32)
-    out.append(str(c))
+    cipher_nums.append(c)
 
-cipher = ",".join(out)
+cipher = ",".join(map(str, cipher_nums))
+
+print("Ciphertext       :", cipher_nums)
+
 nonce = str(secrets.randbits(32))
 
-payload = str(seq) + ":" + nonce + "|" + cipher
+payload = "1:" + nonce + "|" + cipher
+
 mac = make_mac(key, payload)
 
-client.sendall((payload + "||" + mac + "\n").encode())
+packet = payload + "||" + mac
 
-seq += 1
+print("\nNonce            :", nonce)
+print("MAC              :", mac[:16] + "...")
 
-if (seq - 1) % 3 == 0:
-    key = hashlib.sha256(key).digest()
+print(Fore.MAGENTA + "\nPacket →")
+print(packet)
 
+print(Fore.CYAN + "════════════════════════════════\n")
 
-# ----- RECEIVE REPLY -----
+client.sendall((packet + "\n").encode())
+
 reply = recvline(client)
 
-data, mac = reply.split("||")
-
-if not verify_mac(key, data, mac):
-    print("Tampered reply")
-    exit()
-
-seq_part, rest = data.split(":", 1)
-nonce, cipher = rest.split("|")
-
-nums = [int(x) for x in cipher.split(",") if x]
-
-msg = ""
-
-for c in nums:
-    pnum = (c - state) % (2**32)
-    state = (state + c) % (2**32)
-    msg += chr(pnum + 64)
-
-print("Server:", msg)
+print(Fore.CYAN + "\nServer response packet:")
+print(reply)
 
 client.close()
