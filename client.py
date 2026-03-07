@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 
+# -------- LOAD KEYS --------
 with open("server_public.pem", "rb") as f:
     server_pub = serialization.load_pem_public_key(f.read())
 
@@ -15,6 +16,7 @@ with open("client_private.pem", "rb") as f:
     client_priv = serialization.load_pem_private_key(f.read(), password=None)
 
 
+# -------- HELPERS --------
 def recvline(sock):
     data = b""
     while not data.endswith(b"\n"):
@@ -37,10 +39,12 @@ def verify_mac(key, data, mac):
     return hmac.compare_digest(make_mac(key, data), mac)
 
 
+# -------- CONNECT --------
 client = socket.socket()
 client.connect(("127.0.0.1", 5000))
 
 
+# ----- SERVER SIGNED DH -----
 line = recvline(client)
 data, signature_hex = line.split("|")
 
@@ -59,17 +63,17 @@ server_pub.verify(
 p, g, B = map(int, data.split(","))
 
 
+# ----- CLIENT DH -----
 a = random.randint(2, 100000)
 A = pow(g, a, p)
-
 client.sendall((str(A) + "\n").encode())
 
 shared = pow(B, a, p)
 key = derive_key(shared)
-
 state = shared % (2**32)
 
 
+# ----- CLIENT AUTH -----
 challenge = recvline(client)
 
 signature = client_priv.sign(
@@ -84,8 +88,8 @@ signature = client_priv.sign(
 client.sendall((signature.hex() + "\n").encode())
 
 
+# ----- SEND MESSAGE -----
 seq = 1
-
 msg = input("Message: ").upper()
 
 nums = [ord(c) - 64 for c in msg]
@@ -98,11 +102,9 @@ for n in nums:
     out.append(str(c))
 
 cipher = ",".join(out)
-
 nonce = str(secrets.randbits(32))
 
 payload = str(seq) + ":" + nonce + "|" + cipher
-
 mac = make_mac(key, payload)
 
 client.sendall((payload + "||" + mac + "\n").encode())
@@ -112,6 +114,8 @@ seq += 1
 if (seq - 1) % 3 == 0:
     key = hashlib.sha256(key).digest()
 
+
+# ----- RECEIVE REPLY -----
 reply = recvline(client)
 
 data, mac = reply.split("||")
@@ -121,7 +125,6 @@ if not verify_mac(key, data, mac):
     exit()
 
 seq_part, rest = data.split(":", 1)
-
 nonce, cipher = rest.split("|")
 
 nums = [int(x) for x in cipher.split(",") if x]

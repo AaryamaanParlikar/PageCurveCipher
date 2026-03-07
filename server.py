@@ -103,10 +103,12 @@ def load_authorized_keys():
     keys = []
     if not os.path.exists("authorized_clients"):
         return keys
+
     for file in os.listdir("authorized_clients"):
         path = os.path.join("authorized_clients", file)
         with open(path, "rb") as f:
             keys.append(serialization.load_pem_public_key(f.read()))
+
     return keys
 
 
